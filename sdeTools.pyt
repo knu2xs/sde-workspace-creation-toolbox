@@ -1,6 +1,7 @@
 '''
 Name:        SDE Workspace Tools
-Purpose:
+Purpose:     Set of tools streamlining the process of setting up test and
+             demonstration sde workspaces.
 
 Author:      Joel McCune (knu2xs@gmail.com)
 
@@ -92,7 +93,7 @@ class CreateSde(object):
             'GPEncryptedString', globalSdePswd)
         param6 = newParamater('Data Owner Name', 'dataownerName',
             'GPString', globalOwnerName)
-        param7 = Param('Data Owner Password', 'dataownerPassword',
+        param7 = newParamater('Data Owner Password', 'dataownerPassword',
             'GPEncryptedString', globalOwnerPswd)
         param8 = newParamater('Authorization File', 'authFile', 'DEFile',
             globalAuthFile)
@@ -265,7 +266,7 @@ class SdeFromXml(CreateSde):
         '''Define parameter definitions'''
 
         # don't work so hard, get parameters from CreateSde
-        params=CreateSde.getParameterInfo()
+        params=CreateSde.getParameterInfo(self)
 
         # replace first parameter in list, param0, with name of xml file
         params[0] = newParamater('XML Workspace File', 'xmlFile',  'DEFile')
