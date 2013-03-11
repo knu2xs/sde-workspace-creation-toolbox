@@ -1,5 +1,5 @@
 '''
-Name:
+Name:        SDE Workspace Tools
 Purpose:
 
 Author:      Joel McCune (knu2xs@gmail.com)
@@ -24,6 +24,7 @@ Licence:
 # import modules
 import arcpy
 from socket import gethostname
+from os import path
 
 # global variables to be set and reused
 globalInstance=gethostname()
@@ -35,9 +36,27 @@ globalOwnerPswd='' # data owner password
 # authorization file
 globalAuthFile=r'C:\Program Files\ESRI\License10.1\sysgen\keycodes'
 
-# method used by all tools
-def methodCreateSde(parameters):
+def newParamater(displayName, name,  datatype, defaultValue = None,
+    filterList = None, parameterType = 'Required', direction = 'Input'):
 
+    # initialize the parameter for ArcGIS
+    param = arcpy.Parameter(
+        displayName = displayName,
+        name = name,
+        datatype = datatype,
+        parameterType = parameterType,
+        direction = direction)
+
+    # assign a default value
+    if defaultValue is not None:
+        param.value = defaultValue
+
+    # apply a filter list
+    if filterList is not None:
+        param.filter.list = filterList
+
+    # return ArcGIS Parameter type with propertites set
+    return param
 
 class Toolbox(object):
 
@@ -45,91 +64,43 @@ class Toolbox(object):
         '''Define the toolbox (the name of the toolbox is the name of the
         .pyt file).'''
         self.label='SDE Tools'
-        self.alias='SDE Tools'
+        self.alias='SdeTools'
 
         # List of tool classes associated with this toolbox
-        self.tools=[createSde, createSdeLoadXml]
+        self.tools=[CreateSde, SdeFromXml]
 
-class createSde(object):
+class CreateSde(object):
 
     def __init__(self):
         '''Define the tool (tool name is the name of the class).'''
         self.label='Create SDE Workspace'
-        self.description=('Calls the Create Enterprise Geodatabase tool, with '+
-            'with a lot of the parameters already pre-populated to make life '+
-            'a little easier.')
         self.canRunInBackground=False
 
     def getParameterInfo(self):
         '''Define parameter definitions'''
-        param0=arcpy.Parameter(
-            displayName='Database Name',
-            name='dbName',
-            datatype='GPString',
-            parameterType='Required',
-            direction='Input')
-        param1=arcpy.Parameter(
-            displayName='Instance',
-            name='instance',
-            datatype='GPString',
-            parameterType='Required',
-            direction='Input')
-        param2=arcpy.Parameter(
-            displayName='Database Management System',
-            name='dbms',
-            datatype='GPString',
-            parameterType='Required',
-            direction='Input')
-        param3=arcpy.Parameter(
-            displayName='Superuser Name',
-            name='suName',
-            datatype='GPString',
-            parameterType='Required',
-            direction='Input')
-        param4=arcpy.Parameter(
-            displayName='Superuser Password',
-            name='suPswd',
-            datatype='GPEncryptedString',
-            parameterType='Required',
-            direction='Input')
-        param5=arcpy.Parameter(
-            displayName='SDE User Password',
-            name='sdePswd',
-            datatype='GPEncryptedString',
-            parameterType='Required',
-            direction='Input')
-        param6=arcpy.Parameter(
-            displayName='Data Owner Name',
-            name='dataownerName',
-            datatype='GPString',
-            direction='Input')
-        param7=arcpy.Parameter(
-            displayName='Data Owner Password',
-            name='dataownerPassword',
-            datatype='GPEncryptedString',
-            direction='Input')
-        param8=arcpy.Parameter(
-            displayName='Authorization File',
-            name='authFile',
-            datatype='DEFile',
-            parameterType='Required',
-            direction='Input')
 
-        # database options
-        param2.filter.list=['Oracle', 'PostgreSQL', 'SQL_Server']
+        # arguments for tool parameters
+        param0 = newParamater('Database Name', 'dbName', 'GPString')
+        param1 = newParamater('Database Management System', 'dbms', 'GPString',
+            globalDbms, ['Oracle', 'PostgreSQL', 'SQL_Server'])
+        param2 = newParamater('Instance', 'instance', 'GPString',
+            globalInstance)
+        param3 = newParamater('Superuser Name', 'suName', 'GPString')
+        param4 = newParamater('Superuser Password', 'suPswd', 'GPString',
+            globalSuPswd)
+        param5 = newParamater('SDE User Password', 'sdePswd',
+            'GPEncryptedString', globalSdePswd)
+        param6 = newParamater('Data Owner Name', 'dataownerName',
+            'GPString', globalOwnerName)
+        param7 = Param('Data Owner Password', 'dataownerPassword',
+            'GPEncryptedString', globalOwnerPswd)
+        param8 = newParamater('Authorization File', 'authFile', 'DEFile',
+            globalAuthFile)
 
-        # set parameter defaults
-        param1.value=globalInstance # instance
-        param2.value=globalDbms # dbms
-        param4.value=globalSuPswd # su password
-        param5.value=globalSdePswd # sde password
-        param6.value=globalOwnerName # data owner username
-        param7.value=globalOwnerPswd # data owner password
-        param8.value=globalAuthFile # authorization file
-
-        # list and return parameters
-        params=[param0, param1, param2, param3, param4, param5, param6, \
+        params = [param0, param1, param2, param3, param4, param5, param6,
             param7, param8]
+
+        # return parameters
         return params
 
     def isLicensed(self):
@@ -178,9 +149,7 @@ class createSde(object):
         ownerPswd=parameters[7].value
         authFile=parameters[8].value
 
-        # import os
-        from os.path import join
-
+        # testing message
         for parameter in parameters:
             arcpy.AddMessage(parameter)
 
@@ -238,7 +207,7 @@ class createSde(object):
             arcpy.AddMessage('Successfully created connection as sde user.')
 
             # full connection path
-            sdeConnectionPath=join(dbFolder, sdeConnectionName)
+            sdeConnectionPath=path.join(dbFolder, sdeConnectionName)
 
         except arcpy.ExecuteError():
             arcpy.AddMessage('Unable to connect as sde user.')
@@ -277,12 +246,58 @@ class createSde(object):
                 '{0}').format(ownerName))
 
             # full connection path
-            ownerConnectionPath=join(dbFolder, ownerConnectionName)
-            return ownerConnectionPath
+            ownerConnectionPath=path.join(dbFolder, ownerConnectionName)
+            return [ownerConnectionPath]
 
         except arcpy.ExecuteError():
             arcpy.AddMessage(('Could not create connection as data owner: {0}')\
                 .format(ownerName))
             arcpy.AddMessage(arcpy.GetMessages())
 
-            return
+class SdeFromXml(CreateSde):
+
+    def __init__(self):
+        '''Define the tool (tool name is the name of the class).'''
+        self.label='Create SDE from XML Workspace File'
+        self.canRunInBackground=False
+
+    def getParameterInfo(self):
+        '''Define parameter definitions'''
+
+        # don't work so hard, get parameters from CreateSde
+        params=CreateSde.getParameterInfo()
+
+        # replace first parameter in list, param0, with name of xml file
+        params[0] = newParamater('XML Workspace File', 'xmlFile',  'DEFile')
+
+        # return parameters
+        return params
+
+    def execute(self, parameters, messages):
+
+        # intercept param[0], the path to the xml file
+        xmlFile = parameters[0]
+
+        # extract filename, make lowercase, and strip xml extension
+        parameters[0] = ((path.basename(xmlFile)).lower()).rstrip('.xml')
+
+        # execute CreateSde and get path to dataowner connection
+        ownerConnection = CreateSde.execute(self, parameters, messages)
+
+        # load xml through dataowner connection
+        try:
+            arcpy.ImportXMLWorkspaceDocument_management(
+                target_geodatabase = ownerConnection,
+                in_file = xmlFile,
+                import_type = 'DATA')
+
+        except arcpy.ExecuteError:
+            arcpy.AddMessage(('Data load failed from {0}').format(xmlFile))
+            arcpy.AddMessage(arcpy.GetMessages())
+
+
+# testing
+if __name__ == '__main__':
+    database = CreateSde()
+
+    xmlDb = SdeFromXml()
