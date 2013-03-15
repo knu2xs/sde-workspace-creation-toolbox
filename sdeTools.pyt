@@ -1,11 +1,30 @@
 '''
-Name:        SDE Workspace Tools
-Purpose:     Set of tools streamlining the process of setting up test and
-             demonstration sde workspaces.
+Name:
+Purpose:
 
 Author:      Joel McCune (knu2xs@gmail.com)
 
-Created:     07Mar2013
+Created:     15Mar2013
+Copyright:   (c) Joel McCune 2013
+Licence:
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    The GNU General Public License can be found at
+    <http://www.gnu.org/licenses>.
+'''
+
+'''
+Author:      Joel McCune (knu2xs@gmail.com)
+
+Created:     15Mar2013
 Copyright:   (c) Joel McCune 2013
 Licence:
     This program is free software: you can redistribute it and/or modify
@@ -27,107 +46,250 @@ import arcpy
 from socket import gethostname
 from os import path
 
-# global variables to be set and reused
-globalInstance=gethostname()
-globalDbms='PostgreSQL' # dbms
-globalSuPswd='' # su password
-globalSdePswd='' # sde password
-globalOwnerName='owner' # data owner username
-globalOwnerPswd='' # data owner password
-# authorization file
-globalAuthFile=r'C:\Program Files\ESRI\License10.1\sysgen\keycodes'
+# global variables for tool defaults
+globalInstance = gethostname()
+globalDbms = 'PostgreSQL' # dbms
+globalSuPswd = 'Esri12345678' # su password
+globalSdePswd = 'Esri$tud' # sde password
+globalOwnerName = 'owner' # data owner username
+globalOwnerPswd = 'Esri$tud' # data owner password
+# authorization file location
+globalAuthFile = ((r'C:\Program Files\ESRI\License{0}\sysgen\keycodes').
+    format(arcpy.GetInstallInfo()['Version']))
 
-def newParamater(displayName, name,  datatype, defaultValue = None,
-    filterList = None, parameterType = 'Required', direction = 'Input'):
+class sdeWorkspace(object):
 
-    # initialize the parameter for ArcGIS
+    def __init__(self):
+
+        # attributes
+        self.instance = None
+        self.dbms = None
+        self.suName = None
+        self.suPswd = None
+        self.sdeName = 'sde'
+        self.sdePswd = None
+        self.ownerName = None
+        self.ownerPswd = None
+        self.authFile = None
+
+    def initialize(self, dbName):
+        '''
+        Initializes an SDE workspace and gets it ready for use according to best
+        practices. First, the database is created. Second, a connection is
+        created as the sde user. Third, through this sde connection a connection
+        the user specified data owner is created in the geodatabase. Finally,
+        the a connection is made as the data owner. This connection is returned
+        by the function for use when this method is used as part of other
+        methods.
+        '''
+        def createConnection(userName, pswd):
+            '''
+            Since connections are created twice, this method simply consolidates
+            the code and only requries specifying the user name and password.
+            '''
+            try:
+                # connection name string
+                connectionName = (('{0} ({1}).sde').
+                    format(dbName, userName))
+
+                # where database connections are stored
+                dbFolder = 'Database Connections'
+
+                # create the connection
+                arcpy.CreateDatabaseConnection_management(
+                    out_folder_path = dbFolder,
+                    out_name = connectionName,
+                    database_platform = self.dbms,
+                    instance = self.instance,
+                    account_authentication = 'DATABASE_AUTH',
+                    username = userName,
+                    password = pswd,
+                    save_user_pass = 'SAVE_USERNAME',
+                    database = dbName)
+
+                # return the connection path
+                connection = path.join(dbFolder, connectionName)
+
+                # return path to sde connection
+                return connection
+
+            except arcpy.ExecuteError():
+                arcpy.AddMessage(arcpy.GetMessages())
+
+        # create sde workspace
+        try:
+            arcpy.CreateEnterpriseGeodatabase_management(
+                database_platform=self.dbms,
+                instance_name=self.instance,
+                database_name=dbName,
+                database_admin=self.suName,
+                database_admin_password=self.suPswd,
+                gdb_admin_name=self.sdeName,
+                gdb_admin_password=self.sdePswd,
+                authorization_file=self.authFile)
+
+        except arcpy.ExecuteError():
+            arcpy.AddMessage(arcpy.GetMessages())
+
+        # create connection as sde and store connection in variable
+        sdeConnection = createConnection(self.sdeName, self.sdePswd)
+
+        # add data owner user to database, it does not exist, will create
+        try:
+            arcpy.CreateDatabaseUser_management(
+                input_database=sdeConnection,
+                user_name=self.ownerName,
+                user_password=self.ownerPswd)
+            # create connection as data owner and store connection in attribute
+            ownerConnection = createConnection(self.ownerName, self.sdePswd)
+
+            # return owner connection for use in other methods
+            return ownerConnection
+
+        except arcpy.ExecuteError():
+            arcpy.AddMessage(arcpy.GetMessages())
+
+    def fromXmlWorkspace(self, xmlWorkspaceFile):
+        '''
+        Create a new SDE workspace from an xml workspace file. First, extract
+        the name of the xml file from the path and use it as the name of the
+        geodatabase. Next, call the initialize method to create the geodatabase,
+        connect as sde, add the data owner and create a connection as the data
+        owner. Finally, load the xml workspace file thorugh the data owner
+        connection.
+        '''
+        try:
+            # extract database name from xml workspace file name in path
+            dbName = (path.basename(xmlWorkspaceFile).lower()).rstrip('.xml')
+
+            # initialize database with database name
+            dbConnection = self.initialize(dbName)
+
+            # load data through data owner connection
+            arcpy.ImportXMLWorkspaceDocument_management(
+                target_geodatabase = dbConnection,
+                in_file = xmlWorkspaceFile)
+
+            # return status
+            return
+
+        except arcpy.ExecuteError():
+            arcpy.AddMessage(arcpy.GetMessages())
+
+    def fileToSde(self, fileGeodatabase):
+        '''
+        Provides for one stop shopping when migrating from a file geodatabase
+        to an SDE. It creates a new SDE geodatabase with the same name as the
+        original file geodatabase and copies the entire schema into the SDE
+        through the data owner connection created using the initialize method
+        defined above.
+        '''
+        # get database name and use for input into initialize
+        fgdbName = (path.basename(fileGeodatabase).lower()).rstrip('.gdb')
+
+        # initialize sde
+        dbName = self.initialize(fgdbName)
+
+        # use walk to get all contents of file gdb
+        for parent, child, objects in arcpy.da.Walk(fileGeodatabase):
+
+            # iterate through every object returned by walk
+            for object in objects:
+
+                # copy from file to sde
+                arcpy.Copy_management(
+                    in_data = path.join(parent, object),
+                    out_data = path.join(dbName, object))
+
+def parameter(displayName, name, datatype, defaultValue=None,
+    parameterType=None, direction=None):
+    '''
+    The parameter implementation makes it a little difficult to quickly
+    create parameters with defaults. This method prepopulates some of these
+    values to make life easier while also allowing setting a default vallue.
+    '''
+    # create parameter with a few default properties
     param = arcpy.Parameter(
         displayName = displayName,
         name = name,
         datatype = datatype,
-        parameterType = parameterType,
-        direction = direction)
+        parameterType = 'Required',
+        direction = 'Input')
 
-    # assign a default value
-    if defaultValue is not None:
-        param.value = defaultValue
+    # set new parameter to a default value
+    param.value = defaultValue
 
-    # apply a filter list
-    if filterList is not None:
-        param.filter.list = filterList
-
-    # return ArcGIS Parameter type with propertites set
+    # return complete parameter object
     return param
 
 class Toolbox(object):
-
     def __init__(self):
-        '''Define the toolbox (the name of the toolbox is the name of the
-        .pyt file).'''
+        # ArcGIS required properties
         self.label='SDE Tools'
-        self.alias='SdeTools'
+        self.alias='sdeTools'
 
         # List of tool classes associated with this toolbox
-        self.tools=[CreateSde, SdeFromXml]
+        self.tools=[CreateSdeTool]
 
-class CreateSde(object):
+class CreateSdeTool(object):
 
     def __init__(self):
-        '''Define the tool (tool name is the name of the class).'''
-        self.label='Create SDE Workspace'
-        self.canRunInBackground=False
+
+        # ArcGIS tool properties
+        self.label = 'Create SDE Workspace'
+        self.canRunInBackground = False
+
+        # list of parameters for tool
+        self.parameters=[
+            parameter('Database Name', 'dbName', 'GPString'),
+            parameter('Instance', 'instance', 'GPString',
+                globalInstance),
+            parameter('Database Management System', 'GPString',
+                globalDbms),
+            parameter('Superuser Name', 'suName','GPString'),
+            parameter('Superuser Password', 'suPswd', 'GPEncryptedString',
+                globalSuPswd),
+            parameter('SDE User Password', 'sdePswd', 'GPEncryptedString',
+                globalSdePswd),
+            parameter('Data Owner Name', 'ownerName', 'GPString',
+                globalOwnerName),
+            parameter('Data Owner Password', 'ownerPswd', 'GPEncryptedString',
+                globalOwnerPswd),
+            parameter('Authorization File', 'authFile', 'DEFile',
+                globalAuthFile)]
+
+        # database systems dropdown list items
+        self.parameters[2].filter.list = ['Oracle', 'PostgreSQL', 'SQL_Server']
 
     def getParameterInfo(self):
-        '''Define parameter definitions'''
-
-        # arguments for tool parameters
-        param0 = newParamater('Database Name', 'dbName', 'GPString')
-        param1 = newParamater('Database Management System', 'dbms', 'GPString',
-            globalDbms, ['Oracle', 'PostgreSQL', 'SQL_Server'])
-        param2 = newParamater('Instance', 'instance', 'GPString',
-            globalInstance)
-        param3 = newParamater('Superuser Name', 'suName', 'GPString')
-        param4 = newParamater('Superuser Password', 'suPswd', 'GPString',
-            globalSuPswd)
-        param5 = newParamater('SDE User Password', 'sdePswd',
-            'GPEncryptedString', globalSdePswd)
-        param6 = newParamater('Data Owner Name', 'dataownerName',
-            'GPString', globalOwnerName)
-        param7 = newParamater('Data Owner Password', 'dataownerPassword',
-            'GPEncryptedString', globalOwnerPswd)
-        param8 = newParamater('Authorization File', 'authFile', 'DEFile',
-            globalAuthFile)
-
-        params = [param0, param1, param2, param3, param4, param5, param6,
-            param7, param8]
-
-        # return parameters
-        return params
+        # send parameters to ArcGIS
+        return self.parameters
 
     def isLicensed(self):
-        '''Set whether tool is licensed to execute.'''
+        # need to set this to check for ArcEditor/Standard license
         return True
 
     def updateParameters(self, parameters):
-        '''This fuction is called whenever a parameter changes.'''
-        '''The database management system is a three option dropdown menu. If
+        '''
+        The database management system is a three option dropdown menu. If
         the database is PostgreSQL or SQL Server, the superuser is set to a
         default, but can be changed. If Oracle, the superuser is set and
-        cannot be changed.'''
+        cannot be changed.
+        '''
 
         # set supersusers based on dbms
-        if parameters[2].value=='Oracle':
-            parameters[3].value='sys'
-            parameters[3].enabled=False
-            parameters[0].enabled=False
-        if parameters[2].value=='PostgreSQL':
-            parameters[3].value='postgres'
-            parameters[3].enabled=True
-            parameters[0].enabled=True
-        if parameters[2].value=='SQL_Server':
-            parameters[3].value='sa'
-            parameters[3].enabled=True
-            parameters[0].enabled=True
+        if parameters[2].value == 'Oracle':
+            parameters[3].value = 'sys'
+            parameters[3].enabled = False
+            parameters[0].enabled = False
+        if parameters[2].value == 'PostgreSQL':
+            parameters[3].value = 'postgres'
+            parameters[3].enabled = True
+            parameters[0].enabled = True
+        if parameters[2].value == 'SQL_Server':
+            parameters[3].value = 'sa'
+            parameters[3].enabled = True
+            parameters[0].enabled = True
 
         return
 
@@ -138,167 +300,4 @@ class CreateSde(object):
 
     def execute(self, parameters, messages):
         '''The source code of the tool.'''
-        # assign parameters to variables
-        dbName=parameters[0].valueAsText
-        instance=parameters[1].valueAsText
-        dbms=parameters[2].valueAsText
-        suName=parameters[3].valueAsText
-        suPswd=parameters[4].value
-        sdeName='sde'
-        sdePswd=parameters[5].value
-        ownerName=parameters[6].valueAsText
-        ownerPswd=parameters[7].value
-        authFile=parameters[8].value
-
-        # testing message
-        for parameter in parameters:
-            arcpy.AddMessage(parameter)
-
-        # assign parameters to variables
-        dbName=parameters[0]
-        instance=parameters[1]
-        dbms=parameters[2]
-        suName=parameters[3]
-        suPswd=parameters[4]
-        sdeName='sde'
-        sdePswd=parameters[5]
-        ownerName=parameters[6]
-        ownerPswd=parameters[7]
-        authFile=parameters[8]
-
-        # set up some other variables
-        dbFolder='Database Connections'
-
-        # account for Oracle not accepting a database name
-        if dbms=='Oracle':
-            dbName=''
-
-        # create sde workspace
-        try:
-            arcpy.CreateEnterpriseGeodatabase_management (
-                database_platform=dbms,
-                instance_name=instance,
-                database_name=dbName,
-                database_admin=suName,
-                database_admin_password=suPswd,
-                gdb_admin_name=sdeName,
-                gdb_admin_password=sdePswd,
-                authorization_file=authFile)
-            arcpy.AddMessage(
-                ('Successfully created {0} geodatabase').format(dbName))
-        except arcpy.ExecuteError():
-            arcpy.AddMessage('Could not create geodatabase.')
-            arcpy.AddMessage(arcpy.GetMessages())
-
-        # add connection as sde user
-        try:
-            # connection name string
-            sdeConnectionName=('{0} ({1}).sde').format(dbName, sdeName)
-
-            arcpy.CreateDatabaseConnection_management(
-                out_folder_path=dbFolder,
-                out_name=sdeConnectionName,
-                database_platform=dbms,
-                instance=instance,
-                account_authentication='DATABASE_AUTH',
-                username=sdeName,
-                password=sdePswd,
-                save_user_pass='SAVE_USERNAME',
-                database=dbName)
-            arcpy.AddMessage('Successfully created connection as sde user.')
-
-            # full connection path
-            sdeConnectionPath=path.join(dbFolder, sdeConnectionName)
-
-        except arcpy.ExecuteError():
-            arcpy.AddMessage('Unable to connect as sde user.')
-            arcpy.AddMessage(arcpy.GetMessages())
-
-        # create data owner user
-        try:
-            arcpy.CreateDatabaseUser_management(
-                input_database=sdeConnectionPath,
-                user_name=ownerName,
-                user_password=ownerPswd)
-            arcpy.AddMessage(('Successfully created data owner user: {0}').
-                format(ownerName))
-
-        except arcpy.ExecuteError():
-            arcpy.AddMessage(
-                ('Could not create data owner user: {0}').format(ownerName))
-            arcpy.AddMessage(arcpy.GetMessages())
-
-        # add dataowner connection
-        try:
-            # connection name string
-            ownerConnectionName=('{0} ({1}).sde').format(dbName, ownerName)
-
-            arcpy.CreateDatabaseConnection_management(
-                out_folder_path=dbFolder,
-                out_name=ownerConnectionName,
-                database_platform=dbms,
-                instance=instance,
-                account_authentication='DATABASE_AUTH',
-                username=ownerName,
-                password=ownerPswd,
-                save_user_pass='SAVE_USERNAME',
-                database=dbName)
-            arcpy.AddMessage(('Successfully created connection as data owner: '+
-                '{0}').format(ownerName))
-
-            # full connection path
-            ownerConnectionPath=path.join(dbFolder, ownerConnectionName)
-            return [ownerConnectionPath]
-
-        except arcpy.ExecuteError():
-            arcpy.AddMessage(('Could not create connection as data owner: {0}')\
-                .format(ownerName))
-            arcpy.AddMessage(arcpy.GetMessages())
-
-class SdeFromXml(CreateSde):
-
-    def __init__(self):
-        '''Define the tool (tool name is the name of the class).'''
-        self.label='Create SDE from XML Workspace File'
-        self.canRunInBackground=False
-
-    def getParameterInfo(self):
-        '''Define parameter definitions'''
-
-        # don't work so hard, get parameters from CreateSde
-        params=CreateSde.getParameterInfo(self)
-
-        # replace first parameter in list, param0, with name of xml file
-        params[0] = newParamater('XML Workspace File', 'xmlFile',  'DEFile')
-
-        # return parameters
-        return params
-
-    def execute(self, parameters, messages):
-
-        # intercept param[0], the path to the xml file
-        xmlFile = parameters[0]
-
-        # extract filename, make lowercase, and strip xml extension
-        parameters[0] = ((path.basename(xmlFile)).lower()).rstrip('.xml')
-
-        # execute CreateSde and get path to dataowner connection
-        ownerConnection = CreateSde.execute(self, parameters, messages)
-
-        # load xml through dataowner connection
-        try:
-            arcpy.ImportXMLWorkspaceDocument_management(
-                target_geodatabase = ownerConnection,
-                in_file = xmlFile,
-                import_type = 'DATA')
-
-        except arcpy.ExecuteError:
-            arcpy.AddMessage(('Data load failed from {0}').format(xmlFile))
-            arcpy.AddMessage(arcpy.GetMessages())
-
-
-# testing
-if __name__ == '__main__':
-    database = CreateSde()
-
-    xmlDb = SdeFromXml()
+        return
