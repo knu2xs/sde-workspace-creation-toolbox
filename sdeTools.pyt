@@ -1,27 +1,8 @@
 '''
-Name:
-Purpose:
+Name:        sdeTools
+Purpose:     Streamline the process of initializing and loading data into an
+             SDE workspace.
 
-Author:      Joel McCune (knu2xs@gmail.com)
-
-Created:     15Mar2013
-Copyright:   (c) Joel McCune 2013
-Licence:
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    The GNU General Public License can be found at
-    <http://www.gnu.org/licenses>.
-'''
-
-'''
 Author:      Joel McCune (knu2xs@gmail.com)
 
 Created:     15Mar2013
@@ -46,14 +27,16 @@ import arcpy
 from socket import gethostname
 from os import path
 
-# global variables for tool defaults
-globalInstance = gethostname()
+# global variables for defaults
 globalDbms = 'PostgreSQL' # dbms
-globalSuPswd = 'Esri12345678' # su password
-globalSdePswd = 'Esri$tud' # sde password
+globalSuPswd = '' # su password
+globalSdePswd = '' # sde password
 globalOwnerName = 'owner' # data owner username
-globalOwnerPswd = 'Esri$tud' # data owner password
-# authorization file location
+globalOwnerPswd = '' # data owner password
+
+# default instance is local machine
+globalInstance = gethostname()
+# default authorization file location
 globalAuthFile = ((r'C:\Program Files\ESRI\License{0}\sysgen\keycodes').
     format(arcpy.GetInstallInfo()['Version']))
 
@@ -149,7 +132,7 @@ class sdeWorkspace(object):
         except arcpy.ExecuteError():
             arcpy.AddMessage(arcpy.GetMessages())
 
-    def fromXmlWorkspace(self, xmlWorkspaceFile):
+    def SdeFromXml(self, xmlWorkspaceFile):
         '''
         Create a new SDE workspace from an xml workspace file. First, extract
         the name of the xml file from the path and use it as the name of the
@@ -229,7 +212,7 @@ class Toolbox(object):
         self.alias='sdeTools'
 
         # List of tool classes associated with this toolbox
-        self.tools=[CreateSdeTool]
+        self.tools=[CreateSdeTool, SdeFromXmlTool, FileToSdeTool]
 
 class CreateSdeTool(object):
 
@@ -244,7 +227,7 @@ class CreateSdeTool(object):
             parameter('Database Name', 'dbName', 'GPString'),
             parameter('Instance', 'instance', 'GPString',
                 globalInstance),
-            parameter('Database Management System', 'GPString',
+            parameter('Database Management System', 'dbms', 'GPString',
                 globalDbms),
             parameter('Superuser Name', 'suName','GPString'),
             parameter('Superuser Password', 'suPswd', 'GPEncryptedString',
@@ -299,5 +282,49 @@ class CreateSdeTool(object):
         return
 
     def execute(self, parameters, messages):
-        '''The source code of the tool.'''
+        # call initialize method of sde
         return
+
+class SdeFromXmlTool(CreateSdeTool):
+
+    def __init__(self):
+
+        # Call superclass constructor
+        CreateSdeTool.__init__(self)
+
+        # Replace ArcGIS tool properties
+        self.label = 'XML to SDE Workspace'
+        self.canRunInBackground = False
+
+        # Replace first tool parameter to become xml workspace file
+        self.parameters[0]=parameter('XML Workspace File', 'xmlFile', 'DEFile')
+
+        # Set input file datatype to be only xml
+        self.parameters[0].filter.list = ['xml']
+
+        return
+
+    def execute(self, parameters, messages):
+        # call xml workspace method of sde
+        return
+
+class FileToSdeTool(CreateSdeTool):
+
+    def __init__(self):
+
+        # Call superclass constructor
+        CreateSdeTool.__init__(self)
+
+        # Replace ArcGIS tool properties
+        self.label = 'File to SDE Workspace'
+        self.canRunInBackground = False
+
+        # Replace first tool parameter to become file geodatabase
+        self.parameters[0] = parameter('File Geodatabase', 'fileGdb',
+            'DEWorkspace')
+
+        self.parameters[0].filter.list = ["Local Database"]
+
+    def execute(self):
+        # call fileToSde method of sde
+        pass
