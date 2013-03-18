@@ -29,10 +29,10 @@ from os import path
 
 # global variables for defaults
 globalDbms = 'PostgreSQL' # dbms
-globalSuPswd = 'Esri12345678' # su password
-globalSdePswd = 'Esri$tud' # sde password
+globalSuPswd = '' # su password
+globalSdePswd = '' # sde password
 globalOwnerName = 'owner' # data owner username
-globalOwnerPswd = 'Esri$tud' # data owner password
+globalOwnerPswd = '' # data owner password
 
 # default instance is local machine
 globalInstance = gethostname()
