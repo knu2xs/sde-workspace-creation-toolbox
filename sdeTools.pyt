@@ -29,10 +29,10 @@ from os import path
 
 # global variables for defaults
 globalDbms = 'PostgreSQL' # dbms
-globalSuPswd = '' # su password
-globalSdePswd = '' # sde password
+globalSuPswd = 'Esri12345678' # su password
+globalSdePswd = 'Esri$tud' # sde password
 globalOwnerName = 'owner' # data owner username
-globalOwnerPswd = '' # data owner password
+globalOwnerPswd = 'Esri$tud' # data owner password
 
 # default instance is local machine
 globalInstance = gethostname()
@@ -282,7 +282,23 @@ class CreateSdeTool(object):
         return
 
     def execute(self, parameters, messages):
-        # call initialize method of sde
+
+        # create instance of sdeWorkspace object
+        sde = sdeWorkspace()
+
+        # set attributes
+        sde.instance = parameters[1].valueAsText
+        sde.dbms = parameters[2].valueAsText
+        sde.suName = parameters[3].valueAsText
+        sde.suPswd = parameters[4].value
+        sde.sdePswd = parameters[5].value
+        sde.ownerName = parameters[6].valueAsText
+        sde.ownerPswd = parameters[7].value
+        sde.authFile = parameters[8].valueAsText
+
+        # call initialize method
+        sde.initialize(parameters[0].valueAsText)
+
         return
 
 class SdeFromXmlTool(CreateSdeTool):
@@ -305,7 +321,23 @@ class SdeFromXmlTool(CreateSdeTool):
         return
 
     def execute(self, parameters, messages):
-        # call xml workspace method of sde
+
+        # create instance of sdeWorkspace object
+        sde = sdeWorkspace()
+
+        # set attributes
+        sde.instance = parameters[1].valueAsText
+        sde.dbms = parameters[2].valueAsText
+        sde.suName = parameters[3].valueAsText
+        sde.suPswd = parameters[4].value
+        sde.sdePswd = parameters[5].value
+        sde.ownerName = parameters[6].valueAsText
+        sde.ownerPswd = parameters[7].value
+        sde.authFile = parameters[8].valueAsText
+
+        # call SdeFromXml method
+        sde.SdeFromXml(parameters[0].valueAsText)
+
         return
 
 class FileToSdeTool(CreateSdeTool):
@@ -325,6 +357,22 @@ class FileToSdeTool(CreateSdeTool):
 
         self.parameters[0].filter.list = ["Local Database"]
 
-    def execute(self):
-        # call fileToSde method of sde
-        pass
+    def execute(self, parameters, messages):
+
+        # create instance of sdeWorkspace object
+        sde = sdeWorkspace()
+
+        # set attributes
+        sde.instance = parameters[1].valueAsText
+        sde.dbms = parameters[2].valueAsText
+        sde.suName = parameters[3].valueAsText
+        sde.suPswd = parameters[4].value
+        sde.sdePswd = parameters[5].value
+        sde.ownerName = parameters[6].valueAsText
+        sde.ownerPswd = parameters[7].value
+        sde.authFile = parameters[8].valueAsText
+
+        # call fileToSde method
+        sde.fileToSde(parameters[0].valueAsText)
+
+        return
